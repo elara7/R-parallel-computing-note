@@ -207,7 +207,7 @@ library(parallel)
 no_cores <- detectCores() 
 # Initial the environment. In Linux, we can add type="FORK" to improve the performance of memory
 # cl <- makeCluster(no_cores,type = "FORK") 
-# cl <- makeCluster(no_cores) 
+cl <- makeCluster(no_cores) 
 # Tell the machine that: these objects need to be used
 #clusterEvalQ(cl,"risksetROC") # for packages
 clusterExport(cl,c("risksetROC","risksetAUC","SIM","seq.ltime","seq.time","GetEstAUC","GetEstAUC.span")) # for functions and objects
