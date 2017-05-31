@@ -1,0 +1,203 @@
+---
+title: "R-parallel-computing"
+author: "Zexian Wang"
+date: "2017-5-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Motivation
+
+- R core is a single-threaded program.
+
+- Some times our tasks can be done at the same time using different cores/threads of cpus to speed up the codes.
+
+# 2. How
+
+There are two types of parallel computing.
+
+## 2.1. Explicit parallelism
+
+- `parallel` for "lapply"
+
+- `foreach` for "for" 
+
+- `SupR`
+
+- `gpuR`
+
+We need to modify/customize our codes in this case.
+
+It is more flexible.
+
+## 2.2. Implicit parallelism
+
+- `OpenBLAS`/`intel MKL`/`NVIDIA cuBLAS`/`H2O`
+
+We can install [Microsoft R Open](https://mran.microsoft.com/open/) to simplily enable intel MKL without any special operation.
+
+We don't need to modify/customize our codes in this case. All the computation will be automatically accelerated. However, only some kinds of computation can be speed up.
+
+# 3. Amdahl's law
+
+The time spent using parallel computing is lager than:
+
+$$T(n) = T(1)(P+(1-P)/n)$$
+
+where T(n) is the time spent using n threads, P is the proportion of parts that can not be parallel.
+
+That means that parallel computing is not always accelerating.
+
+# 4. Data parallelism vs task parallelism
+
+# 4.1 Data parallelism
+
+**In data parallelism, a dataset is divided into multiple partitions. Different partitions are distributed to multiple processors, and the same task is executed on each partition of data**
+
+For example, finding the maximum value in a vector dataset(one billion numeric data points). We can use the serial algorithm like:
+
+```{r}
+serialmax <- function(data) {
+ max = -Inf
+ for (i in data) {
+ if (i > max)
+ max = i
+ }
+ return(max)
+}
+```
+
+One way to parallelize this algorithm is to split the data into partitions. If we have a computer with eight CPU cores, we can split the data into eight partitions of 125 million numbers each. Running eight instances of serialmax() in parallel—one for each data partition—to find the local maximum value in each partition. Once all the partitions have been processed, the algorithm finds the global maximum value by finding the largest value among the local maxima. 
+
+Other examples of computations and algorithms that can be run in a data parallel way include:
+
+- Element-wise matrix operations such as addition and subtraction: The matrices can be partitioned and the operations are applied to each pair of partitions.
+
+- Means: The sums and number of elements in each partition, can be added to find the global sum and number of elements, from which the mean can be computed.
+
+- K-means clustering: After data partitioning, the K centroids are distributed to all the partitions. Finding the closest centroid is performed in parallel and independently across the partitions. The centroids are updated by first, calculating the sums and the counts of their respective members in parallel, and then consolidating them in a single process to get the global means.
+
+- Frequent itemset mining using the Partition algorithm: In the first pass, the frequent itemsets are mined from each partition of data to generate a global set of candidate itemsets; in the second pass, the supports of the candidate itemsets are summed from each partition to filter out the globally infrequent ones.
+
+# 4.2 task parallelism
+
+**Tasks are distributed to and executed on different processors in parallel. The tasks on each processor might be the same or different, and the data that they act on might also be the same or different. The key difference between task parallelism and data parallelism is that the data is not divided into partitions.** 
+
+For example, training of a random forest model. A random forest is a collection of decision trees built independently on the same data. During the training process for a particular tree, a random subset of the data is chosen as the training set, and the variables to consider at each branch of the tree are also selected randomly. Hence, even though the same data is used, the trees are different from one another. In order to train a random forest of say 100 decision trees, the workload could be distributed to a computing cluster with 100 processors, with each processor building one tree. All the processors perform the same task on the same data (or exact copies of the data), but the data is not partitioned.
+
+# 5. Algorithms for data parallel
+
+Example: Solving Univariate Quadratic Equation
+
+```{r}
+# Not vectorized function
+solve.quad.eq <- function(a, b, c) {
+    # Not validate eqution: a and b are almost ZERO
+    if(abs(a) < 1e-8 && abs(b) < 1e-8) return(c(NA, NA) )
+    # Not quad equation
+    if(abs(a) < 1e-8 && abs(b) > 1e-8) return(c(-c/b, NA))
+    # No Solution
+    if(b*b - 4*a*c < 0) return(c(NA,NA))
+    # Return solutions
+   x.delta <- sqrt(b*b - 4*a*c)
+   x1 <- (-b + x.delta)/(2*a)
+   x2 <- (-b - x.delta)/(2*a)
+    return(c(x1, x2))
+}
+```
+
+```{r}
+# Generate data 
+len <- 1e6
+a <- runif(len, -10, 10)
+a[sample(len, 100,replace=TRUE)] <- 0
+b <- runif(len, -10, 10)
+c <- runif(len, -10, 10)
+```
+
+```{r}
+# serial code
+microbenchmark::microbenchmark(
+  {
+    res1.s <- lapply(1:len, FUN = function(x) { solve.quad.eq(a[x], b[x], c[x])})
+  },
+  times = 10
+)
+
+#Unit: seconds
+
+#      min       lq     mean   median       uq      max neval
+# 4.423609 4.546609 4.749365 4.778403 4.891756 5.172564    10
+```
+
+```{r}
+# parallel
+library(parallel)
+# multicores on Linux
+microbenchmark::microbenchmark(
+  {
+  res1.p <- mclapply(1:len, FUN = function(x) { solve.quad.eq(a[x], b[x], c[x])}, mc.cores = 8)
+  },
+  times = 10
+)
+
+# mclapply(X=data, FUN=function, mc.cores = the number of cores,...)
+
+# Unit: seconds
+                                                                                                               
+#     min       lq     mean   median       uq      max neval
+# 1.69731 1.711601 2.610463 1.811119 3.846891 4.121252    10
+```
+
+```{r}
+# multicores on Windows/Mac/Linux
+
+# Detect the numbers of cores of the cpu 
+num_cores <- detectCores() 
+
+# Initial the environment. In Linux, we can add type="FORK" to improve the performance of memory
+cl <- makeCluster(num_cores,type = "FORK") 
+#cl <- makeCluster(num_cores), for windows, only use this. 
+
+# Tell the machine that: these objects need to be used
+#clusterEvalQ(cl,"packages names") # for packages
+clusterExport(cl,c("a","b","c")) # for functions and objects
+
+microbenchmark::microbenchmark(
+  {
+  res1.par <- parLapply(cl, X = 1:len, fun = function(x){solve.quad.eq(a[x],b[x],c[x])})
+  },
+  times = 10
+)
+
+# parLapply(cl, X=data, fun=function,...)
+
+stopCluster(cl)
+
+# Unit: seconds
+
+# min      lq     mean  median      uq      max neval
+# 1.464437 1.61104 1.771237 1.77304 1.94466 2.042912    10
+```
+
+There are `parSapply`,`parApply`,`parLapplyLB`,`parSapplyLB`,`parRapply`,`parCapply`,`mclapply`,`mcapply`
+
+- parSapply(cl, X, FUN, ..., simplify = TRUE, USE.NAMES = TRUE), similar to `sapply`
+
+- parApply(cl = NULL, X, MARGIN, FUN, ...), similar to `apply`
+
+- parLapplyLB(cl, X, fun, ...), similar to `lapply`，provide load balancing
+
+- parSapplyLB(cl, X, FUN, ..., simplify = TRUE, USE.NAMES = TRUE), similar to `sapply`, provide load balancing
+
+# 6. Distributed memory parallelism vs shared memory parallelism
+
+**In the examples that we have seen so far, data is copied from the master process or node to each worker. This is called distributed memory parallelism, where each process has its own memory space. In other words, each process needs to have its own copy of the data that it needs to work on, even if multiple processes are working on the same data. This can result in huge redundancies(if the type is not FORK).**
+
+Contrast this with **shared memory parallelism**, where all the workers share a single copy of the data. However the parallel package does not provide support for shared memory parallelism by default. But we can use `bigmemory` package to overcome this. I will sum up the notes about these later.
+
+
+
