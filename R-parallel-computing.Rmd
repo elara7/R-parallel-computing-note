@@ -199,7 +199,5 @@ There are `parSapply`,`parApply`,`parLapplyLB`,`parSapplyLB`,`parRapply`,`parCap
 
 Contrast this with **shared memory parallelism**, where all the workers share a single copy of the data. However the parallel package does not provide support for shared memory parallelism by default. But we can use `bigmemory` package to overcome this. I will sum up the notes about these later.
 
-# Example
 
-[Example](https://github.com/elara7/R-parallel-computing-note/blob/master/R-parallel-computing-example.Rmd)
 
