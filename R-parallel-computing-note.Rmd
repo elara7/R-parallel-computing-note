@@ -74,9 +74,9 @@ GetEstAUC.span <- function(data, method, t, n) {
 ## 3.3. Origin result
 
 ```{r}
-cind.cox <- numeric(10)
-est.diftime.cox <- matrix(NA, nrow = 10, ncol = 9)
-for(i in 1:10) {
+cind.cox <- numeric(100)
+est.diftime.cox <- matrix(NA, nrow = 100, ncol = 9)
+for(i in 1:100) {
   auc <- risksetAUC(Stime=SIM[[i]]$T.20,
        status=SIM[[i]]$status.20, marker=SIM[[i]]$M, method="Cox", 
        tmax=max(SIM[[i]]$T.20), plot = F)
@@ -88,15 +88,20 @@ mean(cind.cox)
 sd(cind.cox)
 colMeans(est.diftime.cox)
 apply(est.diftime.cox, 2, sd)
+
+#[1] 0.7292839
+#[1] 0.01758159
+#[1] 0.7558782 0.7469039 0.7346733 0.7247788 0.7149696 0.7100356 0.6892987 0.6434846 0.5350352
+#[1] 0.02683489 0.02480994 0.02144609 0.01948941 0.01823698 0.02104821 0.03134414 0.05997275 0.06606337
 ```
 
 ## 3.4. Origin speed
 
 ```{r}
 microbenchmark::microbenchmark({
-cind.cox <- numeric(10)
-est.diftime.cox <- matrix(NA, nrow = 10, ncol = 9)
-for(i in 1:10) {
+cind.cox <- numeric(100)
+est.diftime.cox <- matrix(NA, nrow = 100, ncol = 9)
+for(i in 1:100) {
   auc <- risksetAUC(Stime=SIM[[i]]$T.20,
        status=SIM[[i]]$status.20, marker=SIM[[i]]$M, method="Cox", 
        tmax=max(SIM[[i]]$T.20), plot = F)
@@ -108,45 +113,20 @@ mean(cind.cox)
 sd(cind.cox)
 colMeans(est.diftime.cox)
 apply(est.diftime.cox, 2, sd)
-}
-)
-#      min       lq     mean   median       uq      max neval
-# 511.4638 521.7698 549.9761 529.8697 553.5727 770.7014   100
+},
+times = 10)
+
+# Unit: seconds
+#      min       lq     mean   median       uq     max neval
+# 3.421313 3.429348 3.483226 3.492596 3.527414 3.54353    10
 ```
 
 # 4. Packages(Explicit parallelism)
 
-## 4.1. Parallel
-
-### 4.1.1. Load package
-
-```{r}
-library(parallel)
-```
-
-### 4.1.2. Initial settings
-
-```{r}
-# Detect the numbers of cores of the cpu 
-no_cores <- detectCores() 
-# Initial the environment. In Linux, we can add type="FORK" to improve the performance of memory
-cl <- makeCluster(no_cores) 
-# Tell the machine that: these objects need to be used
-#clusterEvalQ(cl,"risksetROC") #for packages
-clusterExport(cl,"risksetROC") # for functions and objects
-clusterExport(cl,"risksetAUC")
-clusterExport(cl,"SIM") 
-clusterExport(cl,"seq.ltime")
-clusterExport(cl,"seq.time")
-clusterExport(cl,"GetEstAUC")
-clusterExport(cl,"GetEstAUC.span")
-```
-
-### 4.1.3. Modify the funciton
+## 4.1. Modify the funciton
 
 ```{r}
 singlecox <- function(i){
-  require(risksetROC)
   
   tryCatch({
     auc <- risksetROC::risksetAUC(Stime=SIM[[i]]$T.20,
@@ -176,11 +156,31 @@ singlecox <- function(i){
 }
 ```
 
-### 4.1.4. Do the parallel compution
+## 4.2. Parallel
+
+### 4.2.1. Load package
+
+```{r}
+library(parallel)
+```
+
+### 4.2.2. Initial settings
+
+```{r}
+# Detect the numbers of cores of the cpu 
+no_cores <- detectCores() 
+# Initial the environment. In Linux, we can add type="FORK" to improve the performance of memory
+cl <- makeCluster(no_cores) 
+# Tell the machine that: these objects need to be used
+#clusterEvalQ(cl,"risksetROC") # for packages
+clusterExport(cl,c("risksetROC","risksetAUC","SIM","seq.ltime","seq.time","GetEstAUC","GetEstAUC.span")) # for functions and objects
+```
+
+### 4.2.3. Do the parallel compution using clusterApply/parLapply
 
 ```{r}
 # Do the parallel compution
-result <- clusterApply(cl,1:10,singlecox)
+result <- clusterApply(cl,1:100,singlecox)
 # Collect the result
 result <- do.call(rbind,result)
 # Get the result
@@ -188,9 +188,31 @@ mean(result[,11])
 sd(result[,11])
 colMeans(result[,2:10])
 apply(result[,2:10], 2, sd)
+
+#[1] 0.7292839
+#[1] 0.01758159
+#[1] 0.7558782 0.7469039 0.7346733 0.7247788 0.7149696 0.7100356 0.6892987 0.6434846 0.5350352
+#[1] 0.02683489 0.02480994 0.02144609 0.01948941 0.01823698 0.02104821 0.03134414 0.05997275 0.06606337
 ```
 
-### 4.1.5. Speed Up!
+```{r}
+result <- parLapply(cl,1:100,singlecox)
+# Collect the result
+result <- do.call(rbind,result)
+# Get the result
+mean(result[,11])
+sd(result[,11])
+colMeans(result[,2:10])
+apply(result[,2:10], 2, sd)
+
+#[1] 0.7292839
+#[1] 0.01758159
+#[1] 0.7558782 0.7469039 0.7346733 0.7247788 0.7149696 0.7100356 0.6892987 0.6434846 0.5350352
+#[1] 0.02683489 0.02480994 0.02144609 0.01948941 0.01823698 0.02104821 0.03134414 0.05997275 0.06606337
+```
+
+
+### 4.2.4. Speed Up!
 
 ```{r}
 microbenchmark::microbenchmark({
@@ -201,32 +223,63 @@ singlecox <- function(i){
   auc.est <- sapply(seq.time, GetEstAUC, method = 'Cox', data = SIM[[i]])
   return(c(i,auc.est,auc$Cindex))
 }
-result <- clusterApply(cl,1:10,singlecox)
+result <- clusterApply(cl,1:100,singlecox)
 result <- do.call(rbind,result)
 mean(result[,11])
 sd(result[,11])
 colMeans(result[,2:10])
 apply(result[,2:10], 2, sd)
-}
-)
+},
+times = 10)
+
+# Unit: milliseconds
+#      min       lq    mean  median       uq      max neval
+# 874.1933 879.9534 934.104 885.451 897.6079 1315.894    10
 ```
 
-### 4.1.6. Stop the parallel environment
+```{r}
+microbenchmark::microbenchmark({
+singlecox <- function(i){
+  auc <- risksetAUC(Stime=SIM[[i]]$T.20,
+       status=SIM[[i]]$status.20, marker=SIM[[i]]$M, method="Cox", 
+       tmax=max(SIM[[i]]$T.20), plot = F)
+  auc.est <- sapply(seq.time, GetEstAUC, method = 'Cox', data = SIM[[i]])
+  return(c(i,auc.est,auc$Cindex))
+}
+result <- parLapply(cl,1:100,singlecox)
+result <- do.call(rbind,result)
+mean(result[,11])
+sd(result[,11])
+colMeans(result[,2:10])
+apply(result[,2:10], 2, sd)
+},
+times = 10)
+
+# Unit: milliseconds
+                                                                                                                                                      
+#      min       lq     mean   median       uq      max neval
+# 855.6234 860.8803 899.8512 867.8065 874.6116 1149.639    10
+```
+
+
+### 4.2.5. Stop the parallel environment
 
 ```{r}
 stopCluster(cl)
 ```
 
-## 4.2. Foreach
+When you finish your parallel tasks, stop the parallel environment may avoid some unexpected problems.
 
-### 4.2.1. Load packages
+## 4.3. Foreach
+
+### 4.3.1. Load packages
 
 ```{r, include=FALSE}
 library(foreach)
 library(doParallel)
 ```
 
-### 4.2.2. Initial settings 
+### 4.3.2. Initial settings 
 
 ```{r}
 cl <- makeCluster(no_cores)
@@ -234,8 +287,30 @@ cl <- makeCluster(no_cores)
 registerDoParallel(cl)
 ```
 
+### 4.3.3. Do the parallel compution
+
 ```{r}
-resultfor <- foreach(i = 1:10, 
+resultfor <- foreach(i = 1:100, 
+                     .combine = rbind, # function that is used to process the tasks results as they generated
+                #    .export = "xxx" # using this parameter to export functions or objects in parent's environments(generally no need)
+                     .packages = "risksetROC" # using this parameter to tell machine what packages needed to be loaded
+                ) %dopar% singlecox(i)
+mean(resultfor[,11])
+sd(resultfor[,11])
+colMeans(resultfor[,2:10])
+apply(resultfor[,2:10], 2, sd)
+
+#[1] 0.7292839
+#[1] 0.01758159
+#[1] 0.7558782 0.7469039 0.7346733 0.7247788 0.7149696 0.7100356 0.6892987 0.6434846 0.5350352
+#[1] 0.02683489 0.02480994 0.02144609 0.01948941 0.01823698 0.02104821 0.03134414 0.05997275 0.06606337
+```
+
+### 4.3.4. Speed Up!
+
+```{r}
+microbenchmark::microbenchmark({
+resultfor <- foreach(i = 1:100, 
                      .combine = rbind,
                 #    .export = "xxx" # using this parameter to export functions or objects in parent's environments(generally no need)
                      .packages = "risksetROC" # using this parameter to export packages
@@ -244,22 +319,16 @@ mean(resultfor[,11])
 sd(resultfor[,11])
 colMeans(resultfor[,2:10])
 apply(resultfor[,2:10], 2, sd)
+},
+times =10)
+
+#Unit: seconds
+                                                                                                                                                      
+#      min       lq     mean   median       uq      max neval
+# 1.608848 1.620743 1.664498 1.634976 1.671731 1.903167    10
 ```
 
-```{r}
-microbenchmark::microbenchmark({
-resultfor <- foreach(i = 1:10, 
-                     .combine = rbind
-                #    .export = "xxx" # using this parameter to export functions or objects in parent's environments(generally no need)
-                     #.packages = "risksetROC" # using this parameter to export packages
-                ) %dopar% singlecox(i)
-mean(resultfor[,11])
-sd(resultfor[,11])
-colMeans(resultfor[,2:10])
-apply(resultfor[,2:10], 2, sd)
-}
-)
-```
+### 4.3.5. Stop the parallel environment
 
 ```{r}
 stopImplicitCluster()
