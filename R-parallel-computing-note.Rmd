@@ -1,0 +1,266 @@
+---
+title: "R-parallel-computing-note"
+author: "Zexian Wang"
+date: "2017-5-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Motivation
+
+- R core is a single-threaded program.
+
+- Some times our tasks can be done at the same time using different cores/threads of cpus to speed up the codes.
+
+# 2. How
+
+There are two types of parallel computing.
+
+## 2.1. Explicit parallelism
+
+- `parallel` for "lapply"
+
+- `foreach` for "for" 
+
+- `SupR`
+
+- `gpuR`
+
+We need to modify/customize our codes in this case.
+
+It is more flexible.
+
+## 2.2. Implicit parallelism
+
+- `OpenBLAS`/'intel MKL'/'NVIDIA cuBLAS'/'H2O'
+
+We can install [Microsoft R Open](https://mran.microsoft.com/open/) to simplily enable intel MKL without any special operation.
+
+We don't need to modify/customize our codes in this case. All the computation will be automatically accelerated. However, only some kinds of computation can be speed up.
+
+# 3. Testing data and function
+
+## 3.1. Data
+
+```{r, include=FALSE}
+source("case.R")
+```
+
+## 3.2. Function
+
+```{r}
+GetEstAUC <- function(data, method, t) {
+  # Method: "Cox"
+  auc <- risksetROC(Stime=data$T.20,
+                    status=data$status.20, marker=data$M, method=method, 
+                    predict.time = t, 
+                    plot = F)
+  auc$AUC
+}
+
+GetEstAUC.span <- function(data, method, t, n) {
+  # Method: LocalCox", "Schoenfeld"
+  auc <- risksetROC(Stime=data$T.20,
+                    status=data$status.20, marker=data$M, method=method, 
+                    predict.time = t, span = n^(-0.2),
+                    plot = F)
+  auc$AUC
+}
+```
+
+## 3.3. Origin result
+
+```{r}
+cind.cox <- numeric(10)
+est.diftime.cox <- matrix(NA, nrow = 10, ncol = 9)
+for(i in 1:10) {
+  auc <- risksetAUC(Stime=SIM[[i]]$T.20,
+       status=SIM[[i]]$status.20, marker=SIM[[i]]$M, method="Cox", 
+       tmax=max(SIM[[i]]$T.20), plot = F)
+  auc.est <- sapply(seq.time, GetEstAUC, method = 'Cox', data = SIM[[i]])
+  est.diftime.cox[i, ] <- auc.est
+  cind.cox[i] <- auc$Cindex
+}
+mean(cind.cox)
+sd(cind.cox)
+colMeans(est.diftime.cox)
+apply(est.diftime.cox, 2, sd)
+```
+
+## 3.4. Origin speed
+
+```{r}
+microbenchmark::microbenchmark({
+cind.cox <- numeric(10)
+est.diftime.cox <- matrix(NA, nrow = 10, ncol = 9)
+for(i in 1:10) {
+  auc <- risksetAUC(Stime=SIM[[i]]$T.20,
+       status=SIM[[i]]$status.20, marker=SIM[[i]]$M, method="Cox", 
+       tmax=max(SIM[[i]]$T.20), plot = F)
+  auc.est <- sapply(seq.time, GetEstAUC, method = 'Cox', data = SIM[[i]])
+  est.diftime.cox[i, ] <- auc.est
+  cind.cox[i] <- auc$Cindex
+}
+mean(cind.cox)
+sd(cind.cox)
+colMeans(est.diftime.cox)
+apply(est.diftime.cox, 2, sd)
+}
+)
+#      min       lq     mean   median       uq      max neval
+# 511.4638 521.7698 549.9761 529.8697 553.5727 770.7014   100
+```
+
+# 4. Packages(Explicit parallelism)
+
+## 4.1. Parallel
+
+### 4.1.1. Load package
+
+```{r}
+library(parallel)
+```
+
+### 4.1.2. Initial settings
+
+```{r}
+# Detect the numbers of cores of the cpu 
+no_cores <- detectCores() 
+# Initial the environment. In Linux, we can add type="FORK" to improve the performance of memory
+cl <- makeCluster(no_cores) 
+# Tell the machine that: these objects need to be used
+#clusterEvalQ(cl,"risksetROC") #for packages
+clusterExport(cl,"risksetROC") # for functions and objects
+clusterExport(cl,"risksetAUC")
+clusterExport(cl,"SIM") 
+clusterExport(cl,"seq.ltime")
+clusterExport(cl,"seq.time")
+clusterExport(cl,"GetEstAUC")
+clusterExport(cl,"GetEstAUC.span")
+```
+
+### 4.1.3. Modify the funciton
+
+```{r}
+singlecox <- function(i){
+  require(risksetROC)
+  
+  tryCatch({
+    auc <- risksetROC::risksetAUC(Stime=SIM[[i]]$T.20,
+       status=SIM[[i]]$status.20, marker=SIM[[i]]$M, method="Cox", 
+       tmax=max(SIM[[i]]$T.20), plot = F)},
+    warning = function(w){
+      print(paste("warning auc",paste(i,auc$Cindex)))
+      auc$Cindex <- NA
+    },
+    error = function(e){
+      print(paste("error auc",paste(i,auc$Cindex)))
+      auc$Cindex <- NA
+    })
+  
+  tryCatch({
+    auc.est <- sapply(seq.time, GetEstAUC, method = 'Cox', data = SIM[[i]])},
+    warning = function(w){
+      print(paste("warning auc.est",paste(i,auc.est)))
+      auc.est <- rep(NA,9)
+    },
+    error = function(e){
+      print(paste("error auc.est",paste(i,auc.est)))
+      auc.est <- rep(NA,9)
+    })
+  
+  return(c(i,auc.est,auc$Cindex))
+}
+```
+
+### 4.1.4. Do the parallel compution
+
+```{r}
+# Do the parallel compution
+result <- clusterApply(cl,1:10,singlecox)
+# Collect the result
+result <- do.call(rbind,result)
+# Get the result
+mean(result[,11])
+sd(result[,11])
+colMeans(result[,2:10])
+apply(result[,2:10], 2, sd)
+```
+
+### 4.1.5. Speed Up!
+
+```{r}
+microbenchmark::microbenchmark({
+singlecox <- function(i){
+  auc <- risksetAUC(Stime=SIM[[i]]$T.20,
+       status=SIM[[i]]$status.20, marker=SIM[[i]]$M, method="Cox", 
+       tmax=max(SIM[[i]]$T.20), plot = F)
+  auc.est <- sapply(seq.time, GetEstAUC, method = 'Cox', data = SIM[[i]])
+  return(c(i,auc.est,auc$Cindex))
+}
+result <- clusterApply(cl,1:10,singlecox)
+result <- do.call(rbind,result)
+mean(result[,11])
+sd(result[,11])
+colMeans(result[,2:10])
+apply(result[,2:10], 2, sd)
+}
+)
+```
+
+### 4.1.6. Stop the parallel environment
+
+```{r}
+stopCluster(cl)
+```
+
+## 4.2. Foreach
+
+### 4.2.1. Load packages
+
+```{r, include=FALSE}
+library(foreach)
+library(doParallel)
+```
+
+### 4.2.2. Initial settings 
+
+```{r}
+cl <- makeCluster(no_cores)
+# we need register clusters
+registerDoParallel(cl)
+```
+
+```{r}
+resultfor <- foreach(i = 1:10, 
+                     .combine = rbind,
+                #    .export = "xxx" # using this parameter to export functions or objects in parent's environments(generally no need)
+                     .packages = "risksetROC" # using this parameter to export packages
+                ) %dopar% singlecox(i)
+mean(resultfor[,11])
+sd(resultfor[,11])
+colMeans(resultfor[,2:10])
+apply(resultfor[,2:10], 2, sd)
+```
+
+```{r}
+microbenchmark::microbenchmark({
+resultfor <- foreach(i = 1:10, 
+                     .combine = rbind
+                #    .export = "xxx" # using this parameter to export functions or objects in parent's environments(generally no need)
+                     #.packages = "risksetROC" # using this parameter to export packages
+                ) %dopar% singlecox(i)
+mean(resultfor[,11])
+sd(resultfor[,11])
+colMeans(resultfor[,2:10])
+apply(resultfor[,2:10], 2, sd)
+}
+)
+```
+
+```{r}
+stopImplicitCluster()
+```
