@@ -226,9 +226,11 @@ There are `parSapply`,`parApply`,`parLapplyLB`,`parSapplyLB`,`parRapply`,`parCap
 
 ## 5.5 Parallel with foreach package
 
-In fact I am not recommend parallel package rather than foreach. Usually foreach is slower than parallel.
+In fact I recommend parallel package rather than foreach. Usually foreach is slower than parallel if the sub tasks are too short.
 
-```{r}
+Here are some tips:
+
+```
 # load packages
 library(parallel)
 library(foreach)
@@ -240,12 +242,15 @@ cl <- makeCluster(num_cores)
 # we need register the clusters
 registerDoParallel(cl)
 
-singlefun <- function(i){solve.quad.eq(a[i],b[i],c[i])}
-
 # do parallel
-res1.for <- foreach(i = 1:len) %dopar% singlefun(i)
+res1.for <- foreach(i = 1:len) %dopar% {solve.quad.eq(a[i],b[i],c[i])}
 
+# you need to stop it when you finish your parallel tasks, to aviod some unexpected problems.
 stopImplicitCluster()
+stopCluster(cl)
+
+# you need to rbind the result
+res1.for <- do.call(rbind,res1.for)
 ```
 
 Usage:
@@ -264,11 +269,18 @@ obj %dopar% ex
 times(n)
 ```
 
+Some import parameters:
+
 - .combine: function that is used to process the tasks results as they generated
 
 - .export = "xxx": using this parameter to export functions or objects in parent's environments(generally no need)
 
 - .packages = "package name": using this parameter to tell machine what packages needed to be loaded
+
+- .errorhandling = "stop" or "remove" or "pass": specifies how a task evalution error should be handled.
+
+- %dopar%: connect the foreach parameters and function need to run.
+
 
 # 6. Distributed memory parallelism vs shared memory parallelism
 
