@@ -287,7 +287,7 @@ cl <- makeCluster(no_cores)
 registerDoParallel(cl)
 ```
 
-### 4.3.3. Do the parallel compution
+### 4.3.3. Do the parallel compution using foreach and %dopar%
 
 ```{r}
 resultfor <- foreach(i = 1:100, 
@@ -325,7 +325,7 @@ times =10)
 #Unit: seconds
                                                                                                                                                       
 #      min       lq     mean   median       uq      max neval
-# 1.608848 1.620743 1.664498 1.634976 1.671731 1.903167    10
+# 1.176546 1.245836 1.295963 1.314771 1.346413 1.39304    10
 ```
 
 ### 4.3.5. Stop the parallel environment
