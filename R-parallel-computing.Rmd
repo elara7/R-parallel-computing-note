@@ -37,19 +37,19 @@ It is more flexible.
 
 - `OpenBLAS`/`intel MKL`/`NVIDIA cuBLAS`/`H2O`
 
-We can install [Microsoft R Open](https://mran.microsoft.com/open/) to simplily enable intel MKL without any special operation.
+We can install [Microsoft R Open](https://mran.microsoft.com/open/) to simply enable intel MKL without any special operation.
 
-We don't need to modify/customize our codes in this case. All the computation will be automatically accelerated. However, only some kinds of computation can be speed up.
+We don't need to modify/customize our codes in this case. All the computation will be automatically accelerated. However, only some kinds of computation can be speed up(like matrix operations).
 
 # 3. Amdahl's law
 
-The time spent using parallel computing is lager than:
+The time spent using parallel computing is larger than:
 
-$$T(n) = T(1)(P+(1-P)/n)$$
+**T(n) = T(1)(P+(1-P)/n)**
 
-where T(n) is the time spent using n threads, P is the proportion of parts that can not be parallel.
+where T(n) is the time spent using n threads, P is the proportion of parts that can not be parallel,
 
-That means that parallel computing is not always accelerating.
+Which means that parallel computing is not always faster.
 
 # 4. Data parallelism vs task parallelism
 
@@ -88,7 +88,7 @@ Other examples of computations and algorithms that can be run in a data parallel
 
 For example, training of a random forest model. A random forest is a collection of decision trees built independently on the same data. During the training process for a particular tree, a random subset of the data is chosen as the training set, and the variables to consider at each branch of the tree are also selected randomly. Hence, even though the same data is used, the trees are different from one another. In order to train a random forest of say 100 decision trees, the workload could be distributed to a computing cluster with 100 processors, with each processor building one tree. All the processors perform the same task on the same data (or exact copies of the data), but the data is not partitioned.
 
-# 5. Algorithms for data parallel
+# 5. Codes for data parallel
 
 Example: Solving Univariate Quadratic Equation
 
@@ -226,7 +226,7 @@ There are `parSapply`,`parApply`,`parLapplyLB`,`parSapplyLB`,`parRapply`,`parCap
 
 ## 5.5 Parallel with foreach package
 
-In fact I recommend parallel package rather than foreach. Usually foreach is slower than parallel if the sub tasks are too short.
+In fact I recommend parallel package rather than foreach. Usually foreach is slower than parallel, if the sub tasks are too short.
 
 Here are some tips:
 
