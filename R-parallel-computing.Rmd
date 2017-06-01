@@ -92,6 +92,8 @@ For example, training of a random forest model. A random forest is a collection 
 
 Example: Solving Univariate Quadratic Equation
 
+## 5.1. Testing function
+
 ```{r}
 # Not vectorized function
 solve.quad.eq <- function(a, b, c) {
@@ -109,6 +111,8 @@ solve.quad.eq <- function(a, b, c) {
 }
 ```
 
+## 5.2. Testing data
+
 ```{r}
 # Generate data 
 len <- 1e6
@@ -118,29 +122,45 @@ b <- runif(len, -10, 10)
 c <- runif(len, -10, 10)
 ```
 
+## 5.3 Serial version
+
 ```{r}
 # serial code
 microbenchmark::microbenchmark(
+  
+  # main codes
   {
     res1.s <- lapply(1:len, FUN = function(x) { solve.quad.eq(a[x], b[x], c[x])})
   },
+  
+  # test times
   times = 10
 )
 
 #Unit: seconds
 
 #      min       lq     mean   median       uq      max neval
-# 4.423609 4.546609 4.749365 4.778403 4.891756 5.172564    10
+# 4.008352 4.387887 4.542008 4.516038 4.80773 4.874674    10
+
+# you need to rbind the result
+res1.s <- do.call(rbind,res1.s)
 ```
+
+## 5.4 Parallel with parallel package
+
+For Linux or mac
 
 ```{r}
 # parallel
 library(parallel)
 # multicores on Linux
 microbenchmark::microbenchmark(
+  
+  # main codes
   {
-  res1.p <- mclapply(1:len, FUN = function(x) { solve.quad.eq(a[x], b[x], c[x])}, mc.cores = 8)
+    res1.p <- mclapply(1:len, FUN = function(x) { solve.quad.eq(a[x], b[x], c[x])}, mc.cores = 8)
   },
+  # test times
   times = 10
 )
 
@@ -149,8 +169,13 @@ microbenchmark::microbenchmark(
 # Unit: seconds
                                                                                                                
 #     min       lq     mean   median       uq      max neval
-# 1.69731 1.711601 2.610463 1.811119 3.846891 4.121252    10
+# 1.43542 1.556209  1.82811 1.685015 1.907733 2.933679    10
+
+# you need to rbind the result
+res1.p <- do.call(rbind,res1.p)
 ```
+
+For Windows/Mac/Linux
 
 ```{r}
 # multicores on Windows/Mac/Linux
@@ -158,29 +183,35 @@ microbenchmark::microbenchmark(
 # Detect the numbers of cores of the cpu 
 num_cores <- detectCores() 
 
-# Initial the environment. In Linux, we can add type="FORK" to improve the performance of memory
+# Initial the environment. In Linux or mac, we can add type="FORK" to improve the performance of memory
 cl <- makeCluster(num_cores,type = "FORK") 
 #cl <- makeCluster(num_cores), for windows, only use this. 
 
-# Tell the machine that: these objects need to be used
-#clusterEvalQ(cl,"packages names") # for packages
+# Tell the machine that: these objects or packages need to be used
+# clusterEvalQ(cl,"packages names") # for packages
 clusterExport(cl,c("a","b","c")) # for functions and objects
 
 microbenchmark::microbenchmark(
+  # main codes
   {
   res1.par <- parLapply(cl, X = 1:len, fun = function(x){solve.quad.eq(a[x],b[x],c[x])})
   },
+  # test times
   times = 10
 )
 
 # parLapply(cl, X=data, fun=function,...)
 
+# If you use makeCluster before, you need to stop it when you finish your parallel tasks, to aviod some unexpected problems.
 stopCluster(cl)
 
 # Unit: seconds
 
-# min      lq     mean  median      uq      max neval
+#      min      lq     mean  median      uq      max neval
 # 1.464437 1.61104 1.771237 1.77304 1.94466 2.042912    10
+
+# you need to rbind the result
+res1.par <- do.call(rbind,res1.par)
 ```
 
 There are `parSapply`,`parApply`,`parLapplyLB`,`parSapplyLB`,`parRapply`,`parCapply`,`mclapply`,`mcapply`
@@ -192,6 +223,52 @@ There are `parSapply`,`parApply`,`parLapplyLB`,`parSapplyLB`,`parRapply`,`parCap
 - parLapplyLB(cl, X, fun, ...), similar to `lapply`，provide load balancing
 
 - parSapplyLB(cl, X, FUN, ..., simplify = TRUE, USE.NAMES = TRUE), similar to `sapply`, provide load balancing
+
+## 5.5 Parallel with foreach package
+
+In fact I am not recommend parallel package rather than foreach. Usually foreach is slower than parallel.
+
+```{r}
+# load packages
+library(parallel)
+library(foreach)
+library(doParallel)
+
+# Initial the environment. Similar to parallel package.
+num_cores <- detectCores() 
+cl <- makeCluster(num_cores)
+# we need register the clusters
+registerDoParallel(cl)
+
+singlefun <- function(i){solve.quad.eq(a[i],b[i],c[i])}
+
+# do parallel
+res1.for <- foreach(i = 1:len) %dopar% singlefun(i)
+
+stopImplicitCluster()
+```
+
+Usage:
+
+```
+foreach(..., .combine, .init, .final=NULL, .inorder=TRUE,
+       .multicombine=FALSE,
+       .maxcombine=if (.multicombine) 100 else 2,
+       .errorhandling=c('stop', 'remove', 'pass'),
+       .packages=NULL, .export=NULL, .noexport=NULL,
+       .verbose=FALSE)
+when(cond)
+e1 %:% e2
+obj %do% ex
+obj %dopar% ex
+times(n)
+```
+
+- .combine: function that is used to process the tasks results as they generated
+
+- .export = "xxx": using this parameter to export functions or objects in parent's environments(generally no need)
+
+- .packages = "package name": using this parameter to tell machine what packages needed to be loaded
 
 # 6. Distributed memory parallelism vs shared memory parallelism
 
